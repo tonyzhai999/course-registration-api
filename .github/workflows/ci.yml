@@ -1,0 +1,50 @@
+name: CI
+on:
+  push:
+  pull_request:
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov httpx flake8
+      - name: Lint (critical errors)
+        run: flake8 main.py audit_engine.py --select=E9,F63,F7,F82 --show-source --statistics
+      - name: Run tests with minimum 80% coverage
+        run: pytest -q tests --cov=audit_engine --cov-report=term-missing --cov-fail-under=80
+      - name: Integration test with actual HTTP server
+        run: |
+          uvicorn main:app --host 127.0.0.1 --port 8000 > /tmp/uvicorn.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID || true' EXIT
+          python - <<'PY2'
+          import time
+          import httpx
+          for _ in range(30):
+              try:
+                  assert httpx.get('http://127.0.0.1:8000/openapi.json', timeout=2).status_code == 200
+                  print('API booted')
+                  break
+              except Exception:
+                  time.sleep(1)
+          else:
+              raise SystemExit('API failed to start')
+          base = 'http://127.0.0.1:8000'
+          catalog = '<table><tr><th>Course Code</th><th>Credits</th><th>Prerequisites</th></tr><tr><td>TEST 1234</td><td>3</td><td>TEST 1000</td></tr></table>'
+          with httpx.Client(base_url=base) as client:
+              assert client.post('/api/v1/admin/catalog/import', files={'file': ('c.html', catalog)}).status_code == 201
+              assert client.post('/api/v1/students/ci/history/import', files={'file': ('h.html', '<html></html>')}).status_code == 201
+              assert client.post('/api/v1/students/ci/plan', json={'planned_courses': [{'course_code': 'TEST1234', 'term': '25F'}]}).status_code == 200
+              response = client.get('/api/v1/students/ci/audit-report?strict=true')
+              assert response.status_code == 200
+              assert response.json()['status'] == 'failed'
+              assert response.json()['timeline_validation'][0]['errors'][0]['type'] == 'MISSING_PREREQUISITE'
+          print('Live HTTP integration test passed')
+          PY2

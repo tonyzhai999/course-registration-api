@@ -226,3 +226,7 @@ def get_profile(student_id: str):
         "history": rec["history"],
         "plan": rec["plan"],
     }
+
+# Phase 3: catalog ingestion and academic audit
+from audit_engine import router as audit_router
+app.include_router(audit_router)
