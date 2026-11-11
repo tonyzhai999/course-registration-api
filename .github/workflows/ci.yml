@@ -18,7 +18,7 @@ jobs:
       - name: Lint (critical errors)
         run: flake8 main.py audit_engine.py --select=E9,F63,F7,F82 --show-source --statistics
       - name: Run tests with minimum 80% coverage
-        run: pytest -q tests --cov=audit_engine --cov-report=term-missing --cov-fail-under=80
+        run: python -m pytest -q tests --cov=audit_engine --cov-report=term-missing --cov-fail-under=80
       - name: Integration test with actual HTTP server
         run: |
           uvicorn main:app --host 127.0.0.1 --port 8000 > /tmp/uvicorn.log 2>&1 &
@@ -48,3 +48,4 @@ jobs:
               assert response.json()['timeline_validation'][0]['errors'][0]['type'] == 'MISSING_PREREQUISITE'
           print('Live HTTP integration test passed')
           PY2
+
